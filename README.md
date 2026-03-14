@@ -20,19 +20,24 @@ NexusRAG combines vector search, knowledge graph, and cross-encoder reranking in
 
 ---
 
-## Showcase
-
-<!-- Add screenshots to /showcase directory -->
+## Architecture
 
 <div align="center">
 
+![NexusRAG Architecture](showcase/nexusrag_architecture.jpg)
+
+</div>
+
+## Showcase
+
+<!-- Add screenshots to /showcase directory -->
+<!--
 | Chat with Citations | Knowledge Graph |
 |:---:|:---:|
 | ![Chat](showcase/chat_citations.png) | ![KG](showcase/knowledge_graph.png) |
 | **Document Viewer** | **Analytics Dashboard** |
 | ![Viewer](showcase/document_viewer.png) | ![Analytics](showcase/analytics.png) |
-
-</div>
+-->
 
 ---
 
