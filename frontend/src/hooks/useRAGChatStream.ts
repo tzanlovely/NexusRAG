@@ -39,6 +39,7 @@ export interface RAGStreamResult {
     message: string,
     history: { role: string; content: string }[],
     enableThinking: boolean,
+    forceSearch?: boolean,
   ) => Promise<ChatMessage | null>;
   /** Cancel ongoing stream */
   cancel: () => void;
