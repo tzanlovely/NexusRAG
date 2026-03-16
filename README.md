@@ -13,7 +13,7 @@
 
 **Upload documents. Ask questions. Get cited answers.**
 
-NexusRAG combines vector search, knowledge graph, and cross-encoder reranking into one seamless RAG pipeline — powered by Gemini or local Ollama models.
+NexusRAG combines vector search, knowledge graph, and cross-encoder reranking into one seamless RAG pipeline — powered by Gemini, local Ollama, or fully offline sentence-transformers.
 
 [Features](#features) · [Quick Start](#quick-start) · [Model Recommendations](#multi-provider-llm) · [Tech Stack](#tech-stack)
 
@@ -48,7 +48,7 @@ Most RAG systems follow a simple pipeline: split text → embed → retrieve →
 | **Document Parsing** | Plain text extraction, structure lost | Docling: preserves headings, page boundaries, formulas, layout |
 | **Images & Tables** | Ignored entirely | Extracted, captioned by vision LLM, embedded as searchable vectors |
 | **Chunking** | Fixed-size splits, breaks mid-sentence | Hybrid semantic + structural chunking (respects headings, tables) |
-| **Embeddings** | Single model for everything | Dual-model: BAAI/bge-m3 (1024d, search) + Gemini Embedding (3072d, KG) |
+| **Embeddings** | Single model for everything | Dual-model: BAAI/bge-m3 (1024d, search) + KG embedding (Gemini 3072d / Ollama / sentence-transformers) |
 | **Retrieval** | Vector similarity only | 3-way parallel: Vector over-fetch + KG entity lookup + Cross-encoder rerank |
 | **Knowledge** | No entity awareness | LightRAG graph: entity extraction, relationship mapping, multi-hop traversal |
 | **Context** | Raw chunks dumped to LLM | Structured assembly: KG insights → cited chunks → related images/tables |
@@ -78,13 +78,13 @@ NexusRAG uses [Docling](https://github.com/docling-project/docling) for structur
 | Stage | Technology | Details |
 |---|---|---|
 | **Vector Embedding** | BAAI/bge-m3 | 1024-dim multilingual bi-encoder (100+ languages) |
-| **KG Embedding** | Gemini Embedding 001 | 3072-dim for high-fidelity entity/relationship extraction |
+| **KG Embedding** | Gemini / Ollama / sentence-transformers | Configurable: Gemini (3072d), Ollama, or local sentence-transformers (e.g. bge-m3 1024d) |
 | **Vector Search** | ChromaDB | Cosine similarity, over-fetch top-20 candidates |
 | **Knowledge Graph** | LightRAG | Entity/relationship extraction, keyword-to-entity matching |
 | **Reranking** | BAAI/bge-reranker-v2-m3 | Cross-encoder joint scoring — encodes (query, chunk) pairs together |
 | **Generation** | Gemini / Ollama | Agentic streaming chat with function calling |
 
-**Why two embedding models?** Vector search needs speed (local bge-m3, 1024-dim). Knowledge graph extraction needs semantic richness for entity recognition (Gemini Embedding, 3072-dim). Each model is optimized for its role.
+**Why two embedding models?** Vector search needs speed (local bge-m3, 1024-dim). Knowledge graph extraction needs semantic richness for entity recognition — choose Gemini Embedding (3072-dim, cloud), Ollama, or sentence-transformers (fully local, no API needed). Each model is optimized for its role.
 
 **Retrieval flow:**
 1. **Parallel retrieval** — Vector over-fetch (top-20) + KG entity lookup run simultaneously
@@ -178,6 +178,25 @@ GOOGLE_AI_API_KEY=your-key
 # OLLAMA_MODEL=gemma3:12b
 ```
 
+#### KG Embedding Providers
+
+The Knowledge Graph embedding model is configured separately from the chat LLM:
+
+| Provider | Config | API Required | Dimension |
+|---|---|---|---|
+| **Gemini** (default) | `KG_EMBEDDING_PROVIDER=gemini` | Google AI API key | 3072 |
+| **Ollama** | `KG_EMBEDDING_PROVIDER=ollama` | Ollama server | Varies |
+| **sentence-transformers** | `KG_EMBEDDING_PROVIDER=sentence_transformers` | None (fully local) | Model-dependent (e.g. 1024 for bge-m3) |
+
+```bash
+# Fully local KG embeddings — no API or external service needed
+KG_EMBEDDING_PROVIDER=sentence_transformers
+KG_EMBEDDING_MODEL=BAAI/bge-m3
+KG_EMBEDDING_DIMENSION=1024
+```
+
+> **Tip**: `sentence_transformers` reuses the same `BAAI/bge-m3` model already downloaded for vector search — zero extra disk space, zero API costs, fully offline.
+
 </details>
 
 <details>
@@ -240,6 +259,92 @@ The chat system uses a semi-agentic architecture with real-time SSE streaming:
 - Multiple isolated knowledge bases, each with its own documents, ChromaDB collection, and KG
 - Custom system prompt per workspace (override default Q&A behavior)
 - Independent chat history with message persistence and ratings
+
+</details>
+
+---
+
+## Evaluation
+
+NexusRAG was evaluated using two complementary methods: **16 hand-crafted tests** (rule-based metrics) and **30 RAGAS synthetic tests** (LLM-as-judge). Test corpus: TechVina Annual Report 2025 (Vietnamese, 26 chunks) + DeepSeek-V3.2 Technical Paper (English, 57 chunks).
+
+<details open>
+<summary><b>Phase 1 — Hand-crafted Tests (Rule-based)</b></summary>
+
+<div align="center">
+
+![Phase 1 Evaluation](showcase/eval_phase1.png)
+
+</div>
+
+16 tests across 6 categories using 8 rule-based metrics (keyword coverage, refusal accuracy, citation format, language match, etc.) — no LLM judge involved.
+
+| Category | Pass Rate | Avg Score |
+|---|---|---|
+| Fact Extraction (VI + EN) | 5/5 | 0.93 |
+| Table Data | 2/3 | 0.83 |
+| Cross-Document Reasoning | 2/2 | 0.89 |
+| Anti-Hallucination | 3/3 | 1.00 |
+| Multi-turn History | 2/2 | 0.87 |
+| Citation Accuracy | 1/1 | 0.85 |
+| **Overall** | **15/16** | **0.89 — EXCELLENT** |
+
+</details>
+
+<details open>
+<summary><b>Phase 3 — RAGAS Synthetic Tests (LLM Judge)</b></summary>
+
+<div align="center">
+
+![RAGAS Model Comparison](showcase/eval_ragas_comparison.png)
+
+</div>
+
+30 auto-generated Q&A pairs evaluated by Gemini 2.0 Flash as RAGAS judge. Same questions tested on both models:
+
+| Metric | gemma3:12b (local) | gemini-2.5-flash (cloud) | Winner |
+|---|---|---|---|
+| **Overall score** | 0.832 | **0.846** | Gemini |
+| **Pass rate** | 25/30 (83%) | **26/30 (87%)** | Gemini |
+| Faithfulness | 0.749 | **0.812** | Gemini (+0.063) |
+| Factual correctness | **0.773** | 0.749 | gemma3 (+0.024) |
+| Context recall | 0.833 | 0.833 | Tie |
+| Table extraction | 0.697 | **0.905** | Gemini (+0.208) |
+| Avg latency | **3076ms** | 3283ms | gemma3 (-207ms) |
+
+</details>
+
+<details>
+<summary><b>Strengths & Known Limitations</b></summary>
+
+| Aspect | Status | Detail |
+|---|---|---|
+| Anti-hallucination | :green_circle: Strong | Perfect refusal on out-of-scope questions |
+| Citation format | :green_circle: Strong | 100% correct format across all tests |
+| Cross-doc reasoning | :green_circle: Strong | Successfully synthesizes across multiple sources |
+| Table parsing | :yellow_circle: Model-dependent | gemma3 fails complex tables; Gemini handles well |
+| Language consistency | :yellow_circle: Model-dependent | gemma3 occasionally responds in wrong language |
+| Retrieval coverage | :red_circle: Weak | 5 cases with context_recall = 0 (specific facts missed by retrieval) |
+| Faithfulness | :red_circle: Weak | 4 FAIL cases — LLM adds unsupported details when elaborating |
+
+> Full evaluation methodology and per-sample results: [`rag_evaluation_report.md`](showcase/rag_evaluation_report.md)
+
+</details>
+
+<details>
+<summary><b>Planned Evaluation</b></summary>
+
+Upcoming model benchmarks on the same 30 RAGAS test suite:
+
+| Model | Type | Status |
+|---|---|---|
+| gemma3:12b | Local (Ollama) | :white_check_mark: Done |
+| gemini-2.5-flash | Cloud (Google AI) | :white_check_mark: Done |
+| qwen3.5:4b | Local (Ollama) | :hourglass: Planned |
+| qwen3.5:9b | Local (Ollama) | :hourglass: Planned |
+| gemini-3.1-flash-lite | Cloud (Google AI) | :hourglass: Planned |
+
+Goal: compare cost-efficiency (local 4B/9B) vs cloud quality across faithfulness, table extraction, and multilingual consistency.
 
 </details>
 
@@ -368,6 +473,14 @@ cp .env.example .env
 | `LLM_MAX_OUTPUT_TOKENS` | `8192` | Max output tokens (includes thinking) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `gemma3:12b` | Ollama model name |
+
+### KG Embedding
+
+| Variable | Default | Description |
+|---|---|---|
+| `KG_EMBEDDING_PROVIDER` | `gemini` | `gemini`, `ollama`, or `sentence_transformers` |
+| `KG_EMBEDDING_MODEL` | `text-embedding-004` | Model name (provider-specific) |
+| `KG_EMBEDDING_DIMENSION` | `3072` | Embedding dimension (must match model) |
 
 ### RAG Pipeline
 
